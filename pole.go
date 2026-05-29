@@ -6,11 +6,12 @@ import (
 	"os"
 	"pole/internal"
 	"reflect"
+	"strings"
 	"time"
 )
 
 // must
-// json x
+// json ✅
 // yaml
 
 // maybe
@@ -22,6 +23,7 @@ import (
 
 // TAG BIND
 
+// TODO: make it panic safe
 func triggerOnChange(oldObj any, newObj any) {
 	oldV, newV := reflect.ValueOf(oldObj), reflect.ValueOf(newObj)
 	if oldV.Kind() != reflect.Ptr || newV.Kind() != reflect.Ptr {
@@ -78,54 +80,60 @@ type GenericFileReader[T any] interface {
 	Read(filePath string) (*T, error)
 }
 
-// JSON
-
-type JSONFileReader[T any] struct {
+type FileReader[T any] struct {
 	filePath      string
 	current       *T
 	activeWatcher *internal.FileWatcher
 }
 
-func NewJSONFileReader[T any]() GenericFileReader[T] {
-	return &JSONFileReader[T]{}
+func Read[T any](filePath string) (*T, error) {
+	file, err := (&FileReader[T]{}).Read(filePath)
+	return file, err
 }
 
-func (reader *JSONFileReader[T]) read(filePath string) (*T, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
+func (reader *FileReader[T]) genericReader(filePath string) (*T, error) {
+	if strings.HasSuffix(filePath, ".json") {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+
+		var conf T
+		err = json.Unmarshal(data, &conf)
+		return &conf, err
 	}
-
-	var conf T
-	err = json.Unmarshal(data, &conf)
-	return &conf, err
+	if strings.HasSuffix(filePath, ".yaml") || strings.HasSuffix(filePath, ".yml") {
+		// TODO: implement yaml
+		panic("not implemented. yaml support coming soon")
+	}
+	return nil, fmt.Errorf("unknown file type. only json and yml (yaml) files supported")
 }
 
-func (reader *JSONFileReader[T]) Read(filePath string) (*T, error) {
+func (reader *FileReader[T]) Read(filePath string) (*T, error) {
 	if reader.activeWatcher != nil {
 		reader.activeWatcher.Stop()
 	}
 
-	conf, err := reader.read(filePath)
+	file, err := reader.genericReader(filePath)
 	if err != nil {
 		return nil, err
 	}
 	reader.filePath = filePath
-	reader.current = conf
+	reader.current = file
 
 	watcher := internal.NewFileWatcher(filePath, 100*time.Millisecond, func() {
 		// on file change
 		fmt.Printf("[DEBUG] %s file changed.\n", filePath)
 
-		newConf, err := reader.read(filePath)
+		newFile, err := reader.genericReader(filePath)
 		if err != nil {
-			fmt.Printf("[ERROR] %s file error. could not read. reason: %s\n", filePath, err.Error())
+			fmt.Printf("[ERROR] %s file error. could not genericReader. reason: %s\n", filePath, err.Error())
 			return
 		}
-		oldConf := reader.current
-		reader.current = newConf
+		oldFile := reader.current
+		reader.current = newFile
 
-		triggerOnChange(oldConf, newConf)
+		triggerOnChange(oldFile, newFile)
 	})
 	if err = watcher.Start(); err != nil {
 		fmt.Println("[ERROR] failed to start config file watcher")
@@ -133,5 +141,5 @@ func (reader *JSONFileReader[T]) Read(filePath string) (*T, error) {
 		reader.activeWatcher = watcher
 	}
 
-	return conf, nil
+	return file, nil
 }
