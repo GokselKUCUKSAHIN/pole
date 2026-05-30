@@ -13,19 +13,6 @@ import (
 	"time"
 )
 
-// must
-// json ✅
-// yaml ✅
-
-// maybe
-// toml ✅
-
-// idk
-// xml
-// properties
-
-// TAG BIND
-
 func triggerOnChange(oldObj, newObj any) {
 	defer func() { recover() }()
 
@@ -83,8 +70,6 @@ func triggerOnChange(oldObj, newObj any) {
 	}
 }
 
-// INTERFACE
-
 type GenericFileReader[T any] interface {
 	Read(filePath string) (*T, error)
 }
@@ -100,15 +85,10 @@ var unmarshalFuncs = map[string]UnmarshalFunc{
 
 func resolveUnmarshalFunc(filePath string) (UnmarshalFunc, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
-
 	if fn, ok := unmarshalFuncs[ext]; ok {
 		return fn, nil
 	}
-
-	return nil, fmt.Errorf(
-		"unknown file type %q, supported file types are: json, yaml, toml",
-		ext,
-	)
+	return nil, fmt.Errorf("unknown file type %q, supported file types are: json, yaml, toml", ext)
 }
 
 type FileReader[T any] struct {
@@ -150,12 +130,9 @@ func (reader *FileReader[T]) Read(filePath string) (*T, error) {
 	reader.current = file
 
 	watcher := internal.NewFileWatcher(filePath, 5*time.Second, func() {
-		// on file change
-		fmt.Printf("[DEBUG] %s file changed.\n", filePath)
-
 		newFile, err := reader.genericReader(filePath)
 		if err != nil {
-			fmt.Printf("[ERROR] %s file error. could not genericReader. reason: %s\n", filePath, err.Error())
+			logErrorf("%s file error. file could not read. reason: %s", filePath, err.Error())
 			return
 		}
 		oldFile := reader.current
@@ -164,10 +141,21 @@ func (reader *FileReader[T]) Read(filePath string) (*T, error) {
 		triggerOnChange(oldFile, newFile)
 	})
 	if err = watcher.Start(); err != nil {
-		fmt.Println("[ERROR] failed to start config file watcher")
+		logErrorf("failed to start config file watcher")
 	} else {
 		reader.activeWatcher = watcher
 	}
 
 	return file, nil
+}
+
+func logErrorf(errorMessage string, args ...any) {
+	msg := fmt.Sprintf(errorMessage, args...)
+	ts := time.Now().UTC().Format(time.RFC3339)
+	b, err := json.Marshal(map[string]any{"level": "ERROR", "msg": msg, "time": ts})
+	if err != nil {
+		fmt.Printf(`{"level":"ERROR","msg":"%s","time":"%s"}`, msg, ts)
+		return
+	}
+	fmt.Println(string(b))
 }
