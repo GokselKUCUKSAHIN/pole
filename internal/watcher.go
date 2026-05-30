@@ -44,6 +44,21 @@ func (w *FileWatcher) Start() error {
 		lastModTime := info.ModTime()
 
 		go func() {
+			now := time.Now()
+			next := now.Truncate(w.checkInterval).Add(w.checkInterval)
+			delay := time.Until(next)
+
+			initialTimer := time.NewTimer(delay)
+			defer initialTimer.Stop()
+
+			select {
+			case <-w.done:
+				return
+			case <-initialTimer.C:
+			}
+
+			w.checkAndNotify(&lastModTime)
+
 			ticker := time.NewTicker(w.checkInterval)
 			defer ticker.Stop()
 
@@ -52,15 +67,7 @@ func (w *FileWatcher) Start() error {
 				case <-w.done:
 					return
 				case <-ticker.C:
-					fileInfo, err := os.Stat(w.path)
-					if err != nil {
-						continue
-					}
-
-					if fileInfo.ModTime().After(lastModTime) {
-						lastModTime = fileInfo.ModTime()
-						w.onChange()
-					}
+					w.checkAndNotify(&lastModTime)
 				}
 			}
 		}()
@@ -73,4 +80,16 @@ func (w *FileWatcher) Stop() {
 	w.stopOnce.Do(func() {
 		close(w.done)
 	})
+}
+
+func (w *FileWatcher) checkAndNotify(lastModTime *time.Time) {
+	fileInfo, err := os.Stat(w.path)
+	if err != nil {
+		return
+	}
+
+	if fileInfo.ModTime().After(*lastModTime) {
+		*lastModTime = fileInfo.ModTime()
+		w.onChange()
+	}
 }

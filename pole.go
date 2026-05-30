@@ -149,7 +149,7 @@ func (reader *FileReader[T]) Read(filePath string) (*T, error) {
 	reader.filePath = filePath
 	reader.current = file
 
-	watcher := internal.NewFileWatcher(filePath, 100*time.Millisecond, func() {
+	watcher := internal.NewFileWatcher(filePath, 5*time.Second, func() {
 		// on file change
 		fmt.Printf("[DEBUG] %s file changed.\n", filePath)
 
