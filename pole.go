@@ -3,8 +3,10 @@ package pole
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 	"os"
+	"path/filepath"
 	"pole/internal"
 	"reflect"
 	"strings"
@@ -13,10 +15,10 @@ import (
 
 // must
 // json ✅
-// yaml
+// yaml ✅
 
 // maybe
-// toml
+// toml ✅
 
 // idk
 // xml
@@ -89,6 +91,26 @@ type GenericFileReader[T any] interface {
 
 type UnmarshalFunc = func(data []byte, v any) error
 
+var unmarshalFuncs = map[string]UnmarshalFunc{
+	".json": json.Unmarshal,
+	".yaml": yaml.Unmarshal,
+	".yml":  yaml.Unmarshal,
+	".toml": toml.Unmarshal,
+}
+
+func resolveUnmarshalFunc(filePath string) (UnmarshalFunc, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	if fn, ok := unmarshalFuncs[ext]; ok {
+		return fn, nil
+	}
+
+	return nil, fmt.Errorf(
+		"unknown file type %q, supported file types are: json, yaml, toml",
+		ext,
+	)
+}
+
 type FileReader[T any] struct {
 	filePath      string
 	current       *T
@@ -106,9 +128,9 @@ func (reader *FileReader[T]) genericReader(filePath string) (*T, error) {
 		return nil, err
 	}
 
-	unmarshal := resolveUnmarshalFunc(filePath)
-	if unmarshal == nil {
-		return nil, fmt.Errorf("unknown file type. only json and yml (yaml) files supported")
+	unmarshal, err := resolveUnmarshalFunc(filePath)
+	if err != nil {
+		return nil, err
 	}
 	var conf T
 	err = unmarshal(data, &conf)
@@ -148,14 +170,4 @@ func (reader *FileReader[T]) Read(filePath string) (*T, error) {
 	}
 
 	return file, nil
-}
-
-func resolveUnmarshalFunc(filePath string) UnmarshalFunc {
-	if strings.HasSuffix(filePath, ".json") {
-		return json.Unmarshal
-	}
-	if strings.HasSuffix(filePath, ".yaml") || strings.HasSuffix(filePath, ".yml") {
-		return yaml.Unmarshal
-	}
-	return nil
 }
