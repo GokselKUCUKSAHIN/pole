@@ -1,4 +1,4 @@
-module pole
+module github.com/GokselKUCUKSAHIN/pole
 
 go 1.18
 
