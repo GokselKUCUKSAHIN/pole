@@ -20,7 +20,7 @@ It is designed to provide dynamic, file-driven feature flag management with hot-
 # Installation
 
 ```bash
-go get github.com/GokselKUCUKSAHİN/pole
+go get github.com/GokselKUCUKSAHIN/pole
 ```
 
 ---
