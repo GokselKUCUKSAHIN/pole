@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,8 +19,8 @@ func triggerOnChange(oldObj, newObj any) {
 
 	oldV, newV := reflect.ValueOf(oldObj), reflect.ValueOf(newObj)
 
-	if oldV.Kind() != reflect.Ptr ||
-		newV.Kind() != reflect.Ptr ||
+	if oldV.Kind() != reflect.Pointer ||
+		newV.Kind() != reflect.Pointer ||
 		oldV.IsNil() ||
 		newV.IsNil() {
 		return
@@ -94,12 +95,34 @@ func resolveUnmarshalFunc(filePath string) (UnmarshalFunc, error) {
 type FileReader[T any] struct {
 	filePath      string
 	current       *T
+	mu            sync.RWMutex
+	checkInterval time.Duration
 	activeWatcher *internal.FileWatcher
 }
 
-func Read[T any](filePath string) (*T, error) {
-	file, err := (&FileReader[T]{}).Read(filePath)
-	return file, err
+func (reader *FileReader[T]) Current() *T {
+	reader.mu.RLock()
+	defer reader.mu.RUnlock()
+	return reader.current
+}
+
+func Read[T any](filePath string, opts ...func(*FileReader[T])) (*FileReader[T], error) {
+	reader := &FileReader[T]{
+		checkInterval: 5 * time.Second,
+	}
+	for _, opt := range opts {
+		opt(reader)
+	}
+	if err := reader.load(filePath); err != nil {
+		return nil, err
+	}
+	return reader, nil
+}
+
+func WithCheckInterval[T any](d time.Duration) func(*FileReader[T]) {
+	return func(r *FileReader[T]) {
+		r.checkInterval = d
+	}
 }
 
 func (reader *FileReader[T]) genericReader(filePath string) (*T, error) {
@@ -117,26 +140,30 @@ func (reader *FileReader[T]) genericReader(filePath string) (*T, error) {
 	return &conf, err
 }
 
-func (reader *FileReader[T]) Read(filePath string) (*T, error) {
+func (reader *FileReader[T]) load(filePath string) error {
 	if reader.activeWatcher != nil {
 		reader.activeWatcher.Stop()
 	}
 
 	file, err := reader.genericReader(filePath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	reader.filePath = filePath
+	reader.mu.Lock()
 	reader.current = file
+	reader.mu.Unlock()
 
-	watcher := internal.NewFileWatcher(filePath, 5*time.Second, func() {
+	watcher := internal.NewFileWatcher(filePath, reader.checkInterval, func() {
 		newFile, err := reader.genericReader(filePath)
 		if err != nil {
 			logErrorf("%s file error. file could not read. reason: %s", filePath, err.Error())
 			return
 		}
+		reader.mu.Lock()
 		oldFile := reader.current
 		reader.current = newFile
+		reader.mu.Unlock()
 
 		triggerOnChange(oldFile, newFile)
 	})
@@ -146,7 +173,7 @@ func (reader *FileReader[T]) Read(filePath string) (*T, error) {
 		reader.activeWatcher = watcher
 	}
 
-	return file, nil
+	return nil
 }
 
 func logErrorf(errorMessage string, args ...any) {
