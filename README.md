@@ -1,4 +1,4 @@
-# Pole
+# Pole ⛳️
 
 **Pole** is a feature flag helper for Go.
 It is designed to provide dynamic, file-driven feature flag management with hot-reload support and optional per-field change hooks.
